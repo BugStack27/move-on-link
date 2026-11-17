@@ -1,6 +1,6 @@
 [package]
 name = "moveonlink"
-version = "0.1.0"
+version = "0.0.1"
 description = "Move folders to another disk and leave a link behind"
 edition = "2021"
 rust-version = "1.77"

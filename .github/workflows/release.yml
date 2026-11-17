@@ -1,0 +1,64 @@
+name: Release
+
+# 推 v 前缀 tag 触发：v0.0.1 → 在 windows-latest 上构建 MSI / NSIS 安装包，
+# 挂到同名 GitHub Release 的 Assets 里供下载。
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 建 Release、传资产需要写 contents 的权限，GITHUB_TOKEN 够用
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Tauri 2 用 stable 工具链即可，Cargo.toml 里已经声明 rust-version = 1.77
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # 安装包版本取自 tauri.conf.json，tag 对不上就会发出一个版本号错的包
+      - name: 校验 tag 与版本号一致
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          CONF_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ] || [ "$TAG_VERSION" != "$CONF_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 package.json($PKG_VERSION) / tauri.conf.json($CONF_VERSION) 不一致"
+            exit 1
+          fi
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      # tauri-action 会跑 tauri build（beforeBuildCommand 里先构建前端），
+      # 然后把 bundle 产物传到 tag 对应的 Release；Release 不存在时自动新建
+      - name: 构建安装包并发布
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: MoveOnLink ${{ github.ref_name }}
+          releaseBody: |
+            Windows 安装包见下方 Assets：`.msi` 与 `-setup.exe` 任选其一。
+          releaseDraft: false
+          prerelease: false
