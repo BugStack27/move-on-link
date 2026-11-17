@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>MoveOnLink</title>
+  <link rel="icon" href="/assets/app-icon.png">
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <span class="brand-mark">
+        <img src="/assets/app-icon.png" alt="MoveOnLink">
+      </span>
+      <div data-tauri-drag-region>
+        <span class="brand-name">MoveOnLink</span>
+        <span class="brand-sub">C盘瘦身 · 原地留链</span>
+      </div>
+    </div>
+    <div class="titlebar-right">
+      <button class="badge" id="historyBtn" title="查看迁移记录">
+        <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2 2.6h8M2 6h8M2 9.4h5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+        </svg>
+        记录
+        <span class="count" id="historyCount">0</span>
+      </button>
+      <span class="badge" id="adminBadge" title="当前进程权限">
+        <span class="dot"></span>检查权限中…
+      </span>
+      <div class="win-controls">
+        <button id="btnMin" aria-label="最小化">
+          <svg viewBox="0 0 10 10"><path d="M2 5h6" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+        <button id="btnMax" aria-label="最大化">
+          <svg viewBox="0 0 10 10"><rect x="2" y="2" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+        </button>
+        <button class="close" id="btnClose" aria-label="关闭">
+          <svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="banner" id="adminBanner">
+    <span>未提权运行：受保护目录可能无法读取。请关闭程序，右键“以管理员身份运行”。</span>
+  </div>
+
+  <div class="body">
+    <aside class="rail">
+      <div class="rail-label">流程 / Flow</div>
+      <ol class="steps">
+        <li class="step active" data-step="0">
+          <span class="step-no">01</span>
+          <div><b>选择目录</b><small>源位置与目标盘</small></div>
+        </li>
+        <li class="step" data-step="1">
+          <span class="step-no">02</span>
+          <div><b>安全检查</b><small>占用 · 链接 · 空间</small></div>
+        </li>
+        <li class="step" data-step="2">
+          <span class="step-no">03</span>
+          <div><b>迁移文件</b><small>复制并校验</small></div>
+        </li>
+        <li class="step" data-step="3">
+          <span class="step-no">04</span>
+          <div><b>收尾建链</b><small>原路径接管</small></div>
+        </li>
+      </ol>
+
+      <div class="rail-divider"></div>
+
+      <div class="rail-label">磁盘实况 / Disks</div>
+      <div class="gauge">
+        <div class="gauge-head"><span id="srcDiskName">源盘</span><span class="mono" id="srcDiskText">—</span></div>
+        <div class="gauge-track"><span class="gauge-fill c" id="srcGauge" style="width:0%"></span></div>
+        <div class="gauge-foot" id="srcDiskFoot">选择源目录后显示</div>
+      </div>
+      <div class="release"><span>本次可释放</span><b id="releaseSize">—</b></div>
+      <div class="gauge">
+        <div class="gauge-head"><span id="dstDiskName">目标盘</span><span class="mono" id="dstDiskText">—</span></div>
+        <div class="gauge-track"><span class="gauge-fill d" id="dstGauge" style="width:0%"></span></div>
+        <div class="gauge-foot" id="dstDiskFoot">选择目标目录后显示</div>
+      </div>
+
+      <div class="rail-note" id="railNote">
+        默认 <span class="mono">junction /J</span> · 无需开发者模式
+      </div>
+    </aside>
+
+    <main class="stage">
+
+      <!-- STEP 1 -->
+      <section class="panel active" data-panel="0">
+        <div class="step-head">
+          <span class="kicker">Step 01 / Select</span>
+          <h2>把占用搬走，<span class="accent-word">入口</span>留在原地。</h2>
+          <p class="lead">自由选择源目录与目标位置。迁移完成后，原路径会替换为 Junction 链接，程序和脚本仍按旧路径访问。</p>
+        </div>
+
+        <div class="route">
+          <div class="route-row">
+            <span class="route-tag">SRC</span>
+            <div class="route-info">
+              <div class="route-path mono empty" id="srcPath">尚未选择源目录</div>
+              <div class="route-meta" id="srcMeta">源目录 · 请选择一个文件夹</div>
+            </div>
+            <button class="btn line small" id="pickSrc">浏览…</button>
+          </div>
+          <div class="route-link">
+            <span class="line"></span>
+            <span>MOVE ↓</span>
+            <span class="line"></span>
+          </div>
+          <div class="route-row target">
+            <span class="route-tag">DST</span>
+            <div class="route-info">
+              <div class="route-path mono empty" id="dstPath">尚未选择目标目录</div>
+              <div class="route-meta" id="dstMeta">目标目录 · 需为不存在的文件夹名</div>
+            </div>
+            <button class="btn line small" id="pickDst">浏览…</button>
+          </div>
+        </div>
+
+        <div class="options">
+          <div class="opt-group">
+            <div class="opt-label">链接方式</div>
+            <div class="chips">
+              <button class="chip on" id="chipJunction" data-link="junction"><b>Junction</b><span>mklink /J · 推荐</span></button>
+              <button class="chip" id="chipSymlink" data-link="symlink"><b>Symlink</b><span>mklink /D · 需提权</span></button>
+            </div>
+          </div>
+          <div class="switches">
+            <label class="switch-row locked">
+              <span>迁移前逐个探测文件占用（始终开启）</span>
+              <input type="checkbox" checked disabled>
+              <i class="switch"></i>
+            </label>
+            <label class="switch-row locked">
+              <span>失败自动回滚（始终开启）</span>
+              <input type="checkbox" checked disabled>
+              <i class="switch"></i>
+            </label>
+          </div>
+          <div class="safety-note mono">复制到暂存区 → 校验 → 原目录改名备份 → 建链验证 → 才清理备份</div>
+        </div>
+
+        <div class="actions">
+          <span class="hint" id="moveHint">请选择源目录和目标位置</span>
+          <span class="scan-note mono" id="scanNote"></span>
+          <button class="btn primary" id="toPreflight" disabled>开始预检 <span class="arrow">→</span></button>
+        </div>
+      </section>
+
+      <!-- STEP 2 -->
+      <section class="panel" data-panel="1">
+        <div class="step-head row">
+          <div>
+            <span class="kicker">Step 02 / Preflight</span>
+            <h2>安全检查</h2>
+            <p class="lead">逐个文件探测占用与读取权限，并验证目标盘空间、链接能力与路径关系。此刻不会改动任何文件。</p>
+          </div>
+          <div class="stamp" id="preflightStamp">PREFLIGHT PASSED</div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat"><span>迁移体积</span><b id="pfSize">—</b></div>
+          <div class="stat"><span>文件数量</span><b id="pfFiles">—</b></div>
+          <div class="stat"><span>目录数量</span><b id="pfDirs">—</b></div>
+          <div class="stat"><span>目标盘剩余</span><b id="pfFree">—</b></div>
+        </div>
+
+        <div class="map">
+          <div class="map-line">
+            <span class="mono" id="pfSrc">—</span>
+            <span class="arrow">⟶</span>
+            <span class="mono" id="pfDst">—</span>
+          </div>
+          <div class="map-note">完成后原路径将替换为 <span id="pfLinkType" class="mono">JUNCTION</span> 链接</div>
+        </div>
+
+        <ul class="checks" id="pfChecks"></ul>
+
+        <div class="locked-box" id="lockedPanel" hidden>
+          <div class="locked-head" id="lockedHead">占用 / 不可读文件</div>
+          <div class="locked-list" id="lockedList"></div>
+        </div>
+
+        <div class="error-box" id="preflightError" hidden></div>
+
+        <div class="actions">
+          <button class="btn ghost" id="backToSelect">← 返回修改</button>
+          <div class="action-right">
+            <span class="hint" id="preflightHint">请先完成预检</span>
+            <button class="btn primary" id="startMigration" disabled>开始迁移</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 3 -->
+      <section class="panel" data-panel="2">
+        <div class="step-head row progress-head">
+          <div>
+            <span class="kicker">Step 03 / Transfer</span>
+            <h2>正在迁移</h2>
+            <p class="lead" id="currentFile">准备迁移…</p>
+          </div>
+          <div class="progress-side">
+            <span class="phase-chip mono" id="phaseLabel">准备迁移</span>
+            <div class="big-pct"><span id="pct">0</span><small>%</small></div>
+          </div>
+        </div>
+
+        <div class="bar"><i id="barFill"></i></div>
+
+        <div class="live">
+          <div><span>已迁移</span><b id="liveSize">0 B / —</b></div>
+          <div><span>速度</span><b id="liveSpeed">—</b></div>
+          <div><span>剩余</span><b id="liveEta">—</b></div>
+          <div><span>文件</span><b id="liveFiles">0 / —</b></div>
+        </div>
+
+        <div class="log-wrap">
+          <div class="log-head"><span>迁移日志</span><span class="rec"><i></i>REC</span></div>
+          <pre class="log" id="log"></pre>
+        </div>
+
+        <div class="actions">
+          <span class="hint">取消是安全的：源目录不会受影响，暂存副本会被清理</span>
+          <button class="btn danger" id="cancelBtn">取消迁移</button>
+        </div>
+      </section>
+
+      <!-- STEP 4 -->
+      <section class="panel" data-panel="3">
+        <div class="done-hero">
+          <span class="kicker">Step 04 / Done</span>
+          <h2>已释放 <span id="doneSize">—</span></h2>
+          <p class="lead">原目录已替换为链接，旧路径照常访问。实体文件现在存放在目标盘。</p>
+        </div>
+
+        <div class="map verified">
+          <div class="map-row">
+            <span class="tag ok-tag" id="doneLinkType">Junction</span>
+            <span class="mono" id="doneSrc">—</span>
+          </div>
+          <div class="map-arrow">↓ 指向</div>
+          <div class="map-row">
+            <span class="tag">实体位置</span>
+            <span class="mono" id="doneDst">—</span>
+          </div>
+        </div>
+
+        <ul class="checks">
+          <li class="ok"><span class="ck">✓</span>副本文件数量、大小与 SHA-256 已逐文件核对</li>
+          <li class="ok"><span class="ck">✓</span>链接解析与目标内容读取校验通过</li>
+          <li class="ok"><span class="ck">✓</span>原目录备份已清理（或已保留提示）</li>
+        </ul>
+
+        <div class="warning-box" id="doneWarning" hidden></div>
+        <div class="done-meta mono" id="doneMeta">—</div>
+
+        <div class="actions">
+          <button class="btn primary" id="openTarget">打开目标目录</button>
+          <div class="action-right">
+            <button class="btn line danger" id="undoBtn">撤销迁移</button>
+            <button class="btn ghost" id="restart">再迁移一个</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- HISTORY -->
+      <section class="panel" data-panel="history">
+        <div class="step-head row">
+          <div>
+            <span class="kicker">Archive / History</span>
+            <h2>迁移记录</h2>
+            <p class="lead" id="historySummary">本机暂无迁移记录</p>
+          </div>
+          <button class="btn line small" id="backToWizard">← 返回迁移</button>
+        </div>
+
+        <div class="history-hint mono" id="historyHint"></div>
+        <div class="records" id="recordList"></div>
+        <div class="history-foot">记录保存在本机 AppData · 不含文件内容</div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <span>MoveOnLink 0.1</span>
+    <span>Junction /J · Safe rollback</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="backdrop" id="nameDialog">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="nameDialogTitle">
+    <div class="dialog-head">
+      <div>
+        <span class="kicker">Target / Name</span>
+        <h3 id="nameDialogTitle">确认目标文件夹</h3>
+        <p class="dialog-hint">该文件夹会创建在所选父目录下；若已存在，预检会阻止迁移。</p>
+      </div>
+      <button class="dialog-x" id="targetNameClose" aria-label="关闭">✕</button>
+    </div>
+
+    <div class="dialog-path">
+      <span class="path-label">父目录</span>
+      <span class="mono" id="targetParentText">—</span>
+    </div>
+
+    <div class="dialog-body">
+      <label class="foot-label" for="targetNameInput">目标文件夹名称</label>
+      <input class="path-input mono" id="targetNameInput" spellcheck="false" autocomplete="off">
+      <div class="dialog-error" id="targetNameError" hidden></div>
+      <div class="dialog-actions">
+        <button class="btn ghost" id="targetNameCancel">取消</button>
+        <button class="btn primary" id="targetNameConfirm">使用此名称</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
