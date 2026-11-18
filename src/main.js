@@ -236,6 +236,20 @@ async function pickSource() {
       title: "选择源文件夹"
     });
     if (!selected || typeof selected !== "string") return;
+    const hit = await protectedDirOf(selected);
+    if (hit) {
+      state.src = "";
+      state.report = null;
+      recomputeTarget();
+      updateSelectionUI();
+      updateDiskInfo(state.src, "src");
+      showSelectError(
+        `「${selected}」属于系统保护目录，不允许迁移。\n原因：${hit.reason}\n保护范围：${hit.path}`
+      );
+      toast("该目录受系统保护，已取消选择", 4200);
+      return;
+    }
+    hideSelectError();
     state.src = selected;
     state.report = null;
     hidePreflightError();
@@ -261,6 +275,17 @@ async function pickTarget() {
       title: "选择目标父目录（下一步可自定义文件夹名称）"
     });
     if (!selected || typeof selected !== "string") return;
+    if (!isDriveRoot(selected)) {
+      const hit = await protectedDirOf(selected);
+      if (hit) {
+        showSelectError(
+          `「${selected}」属于系统保护目录，不能作为迁移目标。\n原因：${hit.reason}\n保护范围：${hit.path}`
+        );
+        toast("该目录受系统保护，已取消选择", 4200);
+        return;
+      }
+    }
+    hideSelectError();
 
     pendingTargetParent = selected;
     $("#targetParentText").textContent = selected;
@@ -291,6 +316,7 @@ function clearSelection() {
   updateDiskInfo("", "src");
   updateDiskInfo("", "dst");
   hidePreflightError();
+  hideSelectError();
 }
 
 function hidePreflightError() {
@@ -303,6 +329,32 @@ function showPreflightError(message) {
   const box = $("#preflightError");
   box.textContent = message;
   box.hidden = false;
+}
+
+function hideSelectError() {
+  const box = $("#selectError");
+  box.hidden = true;
+  box.textContent = "";
+}
+
+function showSelectError(message) {
+  const box = $("#selectError");
+  box.textContent = message;
+  box.hidden = false;
+}
+
+function isDriveRoot(path) {
+  return /^[a-zA-Z]:\\?$/.test(String(path));
+}
+
+async function protectedDirOf(path) {
+  try {
+    return await invoke("check_protected_dir", { path });
+  } catch (err) {
+    // 旧版本后端没有该命令时放行，预检仍会再拦一次
+    console.warn("protected dir check unavailable:", err);
+    return null;
+  }
 }
 
 function checkItem(kind, message, detail) {

@@ -1,6 +1,7 @@
 mod engine;
 mod model;
 mod pathutil;
+mod protect;
 mod records;
 mod scan;
 
@@ -50,6 +51,11 @@ fn join_note(existing: Option<String>, extra: String) -> String {
 #[tauri::command]
 fn is_elevated() -> bool {
     pathutil::is_elevated()
+}
+
+#[tauri::command]
+fn check_protected_dir(path: String) -> Option<protect::ProtectedDir> {
+    protect::check(Path::new(&path))
 }
 
 #[derive(serde::Serialize)]
@@ -152,6 +158,12 @@ async fn start_migration(
     cancel.store(false, Ordering::SeqCst);
 
     let link = engine::LinkType::parse(&link_type)?;
+    if let Some(hit) = protect::check(Path::new(&source)) {
+        return Err(format!(
+            "「{}」是系统保护目录（{}），不允许迁移",
+            hit.path, hit.reason
+        ));
+    }
     let display_source = source.clone();
     let display_target = target.clone();
     let dir = data_dir(&app)?;
@@ -320,6 +332,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             is_elevated,
+            check_protected_dir,
             disk_info,
             preflight,
             start_migration,

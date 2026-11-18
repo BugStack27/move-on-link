@@ -1,5 +1,6 @@
 use crate::model::{Issue, LockedFile, PreflightReport};
 use crate::pathutil::{self, display_path, extended, is_reparse};
+use crate::protect;
 use fs2::available_space;
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
@@ -331,6 +332,12 @@ pub fn preflight(
                     "不能迁移磁盘根目录",
                     Some(source_display.clone()),
                 ));
+            } else if let Some(hit) = protect::check(source) {
+                blocking.push(issue(
+                    "source_protected",
+                    &format!("该目录受系统保护，不允许迁移：{}", hit.reason),
+                    Some(format!("{}（保护范围：{}）", source_display, hit.path)),
+                ));
             } else {
                 scan_allowed = true;
                 source_canonical = pathutil::canonicalize_existing(source).ok();
@@ -373,6 +380,19 @@ pub fn preflight(
 
     if let Some(name_issue) = pathutil::invalid_final_name(target) {
         blocking.push(issue("target_name", name_issue, Some(target_display.clone())));
+    }
+
+    // 目标父目录本身可以是盘符根（如 D:\），只拦截落在受保护目录内部的情况。
+    if let Some(parent) = target.parent() {
+        if parent.parent().is_some() {
+            if let Some(hit) = protect::check(parent) {
+                blocking.push(issue(
+                    "target_protected",
+                    &format!("目标位置位于系统保护目录内，禁止使用：{}", hit.reason),
+                    Some(format!("{}（保护范围：{}）", target_display, hit.path)),
+                ));
+            }
+        }
     }
 
     if target_display.starts_with(r"\\") {
