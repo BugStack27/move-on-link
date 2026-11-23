@@ -54,6 +54,18 @@ fn is_elevated() -> bool {
 }
 
 #[tauri::command]
+fn path_kind(path: String) -> &'static str {
+    let path = Path::new(&path);
+    if path.is_dir() {
+        "dir"
+    } else if path.is_file() {
+        "file"
+    } else {
+        "missing"
+    }
+}
+
+#[tauri::command]
 fn check_protected_dir(path: String) -> Option<protect::ProtectedDir> {
     protect::check(Path::new(&path))
 }
@@ -332,6 +344,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             is_elevated,
+            path_kind,
             check_protected_dir,
             disk_info,
             preflight,

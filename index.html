@@ -102,13 +102,17 @@
         </div>
 
         <div class="route">
-          <div class="route-row">
+          <div class="route-row" id="srcRow">
             <span class="route-tag">SRC</span>
             <div class="route-info">
               <div class="route-path mono empty" id="srcPath">尚未选择源目录</div>
               <div class="route-meta" id="srcMeta">源目录 · 请选择一个文件夹</div>
             </div>
             <button class="btn line small" id="pickSrc">浏览…</button>
+            <div class="drop-hint">
+              <span class="drop-tag mono">DROP</span>
+              <span id="dropHintText">松开鼠标，将此文件夹设为源目录</span>
+            </div>
           </div>
           <div class="route-link">
             <span class="line"></span>

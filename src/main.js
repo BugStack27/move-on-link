@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open, ask } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -133,7 +134,7 @@ function updateSelectionUI() {
 
   $("#srcMeta").textContent = hasSrc
     ? `源目录 · ${driveOf(state.src)} 盘`
-    : "源目录 · 请选择一个文件夹";
+    : "源目录 · 点击浏览，或把文件夹直接拖进来";
   $("#dstMeta").textContent = hasDst
     ? `目标目录 · ${driveOf(state.dst)} 盘 · 名称可自定义`
     : "目标目录 · 先选源目录，再选择目标父目录";
@@ -227,6 +228,31 @@ function confirmTargetName() {
   updateDiskInfo(state.dstParent, "dst");
 }
 
+async function applySourcePath(selected) {
+  const hit = await protectedDirOf(selected);
+  if (hit) {
+    state.src = "";
+    state.report = null;
+    recomputeTarget();
+    updateSelectionUI();
+    updateDiskInfo(state.src, "src");
+    showSelectError(
+      `「${selected}」属于系统保护目录，不允许迁移。\n原因：${hit.reason}\n保护范围：${hit.path}`
+    );
+    toast("该目录受系统保护，已取消选择", 4200);
+    return false;
+  }
+  hideSelectError();
+  state.src = selected;
+  state.report = null;
+  hidePreflightError();
+  recomputeTarget();
+  updateSelectionUI();
+  updateDiskInfo(state.src, "src");
+  if (state.dstParent) updateDiskInfo(state.dstParent, "dst");
+  return true;
+}
+
 async function pickSource() {
   if (state.busy) return;
   try {
@@ -236,27 +262,7 @@ async function pickSource() {
       title: "选择源文件夹"
     });
     if (!selected || typeof selected !== "string") return;
-    const hit = await protectedDirOf(selected);
-    if (hit) {
-      state.src = "";
-      state.report = null;
-      recomputeTarget();
-      updateSelectionUI();
-      updateDiskInfo(state.src, "src");
-      showSelectError(
-        `「${selected}」属于系统保护目录，不允许迁移。\n原因：${hit.reason}\n保护范围：${hit.path}`
-      );
-      toast("该目录受系统保护，已取消选择", 4200);
-      return;
-    }
-    hideSelectError();
-    state.src = selected;
-    state.report = null;
-    hidePreflightError();
-    recomputeTarget();
-    updateSelectionUI();
-    updateDiskInfo(state.src, "src");
-    if (state.dstParent) updateDiskInfo(state.dstParent, "dst");
+    await applySourcePath(selected);
   } catch (err) {
     toast(`打开目录选择器失败：${String(err)}`);
   }
@@ -299,6 +305,73 @@ async function pickTarget() {
     }, 60);
   } catch (err) {
     toast(`打开目录选择器失败：${String(err)}`);
+  }
+}
+
+function setDropHint(active, text) {
+  const row = $("#srcRow");
+  if (!row) return;
+  row.classList.toggle("drop-active", active);
+  if (active && text) $("#dropHintText").textContent = text;
+}
+
+async function handleDroppedPaths(paths) {
+  setDropHint(false);
+  const list = Array.isArray(paths) ? paths.filter(Boolean) : [];
+  if (!list.length) return;
+  if (state.busy) {
+    toast("当前有任务正在进行，暂不能更换源目录", 3600);
+    return;
+  }
+
+  const selected = list[0];
+  let kind = "missing";
+  try {
+    kind = await invoke("path_kind", { path: selected });
+  } catch (err) {
+    console.warn("path kind check failed:", err);
+  }
+  if (kind === "file") {
+    toast(`「${baseName(selected)}」是文件，请拖动文件夹`, 3600);
+    return;
+  }
+  if (kind !== "dir") {
+    toast("没有识别到这个文件夹，请重新拖动一次", 3600);
+    return;
+  }
+
+  const name = baseName(selected);
+  closeNameDialog();
+  if (state.step !== 0) showStep(0);
+  const applied = await applySourcePath(selected);
+  if (!applied) return;
+  toast(
+    list.length > 1
+      ? `已将「${name}」设为源目录（一次只取第一个文件夹）`
+      : `已将「${name}」设为源目录`
+  );
+}
+
+async function bindDropEvents() {
+  try {
+    const webview = getCurrentWebview();
+    await webview.onDragDropEvent((event) => {
+      const payload = event.payload || {};
+      if (payload.type === "enter" || payload.type === "over") {
+        if (state.busy) return;
+        const first = Array.isArray(payload.paths) ? payload.paths[0] : "";
+        setDropHint(
+          true,
+          first ? `松开鼠标，把「${baseName(first)}」设为源目录` : ""
+        );
+      } else if (payload.type === "leave") {
+        setDropHint(false);
+      } else if (payload.type === "drop") {
+        handleDroppedPaths(payload.paths);
+      }
+    });
+  } catch (err) {
+    console.warn("Drag & drop unavailable:", err);
   }
 }
 
@@ -853,6 +926,7 @@ function bindUI() {
   bindUI();
   try {
     await bindTauriEvents();
+    await bindDropEvents();
     await loadElevation();
   } catch (err) {
     console.warn("Tauri bridge unavailable:", err);

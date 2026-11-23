@@ -230,7 +230,7 @@ button.badge:hover{border-color:var(--ink-2);background:#fff}
   background:var(--paper-2);
   overflow:hidden;
 }
-.route-row{display:flex;align-items:center;gap:14px;padding:15px 16px}
+.route-row{position:relative;display:flex;align-items:center;gap:14px;padding:15px 16px}
 .route-row.target{background:rgba(255,255,255,.35)}
 .route-tag{
   font-family:var(--font-mono);font-size:9.5px;
@@ -246,6 +246,21 @@ button.badge:hover{border-color:var(--ink-2);background:#fff}
 }
 .route-path.empty{font-family:var(--font-body);color:var(--soft);font-weight:400}
 .route-meta{margin-top:3px;font-size:10.5px;color:var(--soft)}
+.drop-hint{
+  display:none;position:absolute;inset:4px;z-index:2;
+  align-items:center;justify-content:center;gap:9px;
+  border:1.5px dashed var(--accent);border-radius:7px;
+  background:rgba(217,79,32,.08);
+  color:var(--accent-2);font-size:12px;
+  pointer-events:none;
+}
+.route-row.drop-active{background:var(--accent-soft)}
+.route-row.drop-active .drop-hint{display:flex}
+.drop-tag{
+  font-size:9px;letter-spacing:.14em;
+  border:1px solid var(--accent);border-radius:3px;
+  padding:2px 5px;color:var(--accent-2);
+}
 .route-link{
   display:flex;align-items:center;gap:10px;
   padding:0 16px;height:28px;
