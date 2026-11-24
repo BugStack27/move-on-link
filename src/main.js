@@ -27,6 +27,8 @@ const state = {
   record: null,
   records: [],
   busy: false,
+  scanning: false,
+  scanCancelling: false,
   undoing: false,
   historyOpen: false,
   lastBytes: 0,
@@ -592,9 +594,13 @@ async function runPreflight() {
   if (state.busy || !state.src || !state.dst) return;
   const button = $("#toPreflight");
   state.busy = true;
+  state.scanning = true;
+  state.scanCancelling = false;
   setChipsDisabled(true);
-  button.disabled = true;
-  button.innerHTML = "扫描中…";
+  button.disabled = false;
+  button.classList.remove("primary");
+  button.classList.add("danger");
+  button.textContent = "取消扫描";
   $("#scanNote").textContent = "正在扫描源目录并检查文件占用…";
   hidePreflightError();
 
@@ -604,6 +610,15 @@ async function runPreflight() {
       target: state.dst,
       linkType: state.linkType
     });
+    const cancelled = (report.blockingIssues || []).some(
+      (issue) => issue.code === "cancelled"
+    );
+    if (cancelled) {
+      state.report = null;
+      $("#scanNote").textContent = "";
+      toast("已取消扫描，源目录未做任何改动");
+      return;
+    }
     state.report = report;
     renderPreflight(report);
     showStep(1);
@@ -612,11 +627,31 @@ async function runPreflight() {
     $("#scanNote").textContent = "";
   } finally {
     state.busy = false;
+    state.scanning = false;
+    state.scanCancelling = false;
     setChipsDisabled(false);
+    button.classList.remove("danger");
+    button.classList.add("primary");
     button.innerHTML = "开始预检 <span class=\"arrow\">→</span>";
     updateSelectionUI();
     updateDiskInfo(state.src, "src");
     if (state.dstParent) updateDiskInfo(state.dstParent, "dst");
+  }
+}
+
+async function cancelScan() {
+  const button = $("#toPreflight");
+  state.scanCancelling = true;
+  button.disabled = true;
+  button.textContent = "正在取消…";
+  $("#scanNote").textContent = "正在停止扫描…";
+  try {
+    await invoke("cancel_task");
+  } catch (err) {
+    state.scanCancelling = false;
+    toast(String(err));
+    button.disabled = false;
+    button.textContent = "取消扫描";
   }
 }
 
@@ -792,7 +827,7 @@ async function loadElevation() {
 
 async function bindTauriEvents() {
   await listen("moveonlink://scan", (event) => {
-    if (state.step !== 0 || !state.busy) return;
+    if (state.step !== 0 || !state.busy || state.scanCancelling) return;
     const payload = event.payload;
     $("#scanNote").textContent =
       `已扫描 ${fmtInt(payload.files)} 个文件 · ${fmtBytes(payload.bytes)}`;
@@ -868,7 +903,10 @@ function bindUI() {
     });
   });
 
-  $("#toPreflight").addEventListener("click", runPreflight);
+  $("#toPreflight").addEventListener("click", () => {
+    if (state.scanning) cancelScan();
+    else runPreflight();
+  });
   $("#backToSelect").addEventListener("click", () => showStep(0));
   $("#startMigration").addEventListener("click", beginMigration);
   $("#cancelBtn").addEventListener("click", async () => {

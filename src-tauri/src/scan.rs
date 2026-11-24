@@ -202,7 +202,7 @@ fn scan_tree(
     let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
     let mut last_emit = Instant::now();
 
-    while let Some(dir) = stack.pop() {
+    'outer: while let Some(dir) = stack.pop() {
         if cancel.load(Ordering::SeqCst) {
             stats.errors.push(issue(
                 "cancelled",
@@ -225,6 +225,15 @@ fn scan_tree(
         };
 
         for entry in entries {
+            if cancel.load(Ordering::SeqCst) {
+                stats.errors.push(issue(
+                    "cancelled",
+                    "预检已取消",
+                    Some(display_path(&dir)),
+                ));
+                break 'outer;
+            }
+
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(err) => {
