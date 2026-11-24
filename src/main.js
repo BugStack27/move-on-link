@@ -30,6 +30,10 @@ const state = {
   scanning: false,
   scanCancelling: false,
   undoing: false,
+  undoView: "",
+  undoSpeed: 0,
+  undoLastBytes: 0,
+  undoLastTime: 0,
   historyOpen: false,
   lastBytes: 0,
   lastTime: 0,
@@ -590,6 +594,73 @@ function updateProgress(payload) {
   }
 }
 
+function resetUndoUI() {
+  state.undoSpeed = 0;
+  state.undoLastBytes = 0;
+  state.undoLastTime = 0;
+  $("#undoPct").textContent = "0";
+  $("#undoBarFill").style.width = "0%";
+  $("#undoPhase").textContent = "准备撤销";
+  $("#undoFile").textContent = "正在准备撤销…";
+  $("#undoSize").textContent = "0 B / —";
+  $("#undoSpeed").textContent = "—";
+  $("#undoEta").textContent = "—";
+  $("#undoFiles").textContent = "0 / —";
+  $("#undoHint").textContent = "取消是安全的：链接保持不动，暂存副本会被清理";
+  const cancel = $("#undoCancel");
+  cancel.disabled = false;
+  cancel.textContent = "取消撤销";
+}
+
+function setUndoBusy(active) {
+  const undoBtn = $("#undoBtn");
+  undoBtn.disabled = active;
+  undoBtn.textContent = active ? "正在撤销…" : "撤销迁移";
+  $("#openTarget").disabled = active;
+  $("#restart").disabled = active;
+  $("#historyBtn").disabled = active;
+  $("#undoPanel").hidden = !active;
+  if (active) resetUndoUI();
+}
+
+function updateUndoProgress(payload) {
+  const percent = Math.max(0, Math.min(100, Number(payload.percent || 0)));
+  $("#undoPct").textContent = String(Math.floor(percent));
+  $("#undoBarFill").style.width = `${percent}%`;
+  $("#undoSize").textContent = `${fmtBytes(payload.bytesDone)} / ${fmtBytes(payload.bytesTotal)}`;
+  $("#undoFiles").textContent = `${fmtInt(payload.filesDone)} / ${fmtInt(payload.filesTotal)}`;
+  $("#undoPhase").textContent = payload.phaseLabel || "正在撤销";
+
+  const now = performance.now();
+  if (!state.undoLastTime) {
+    state.undoLastTime = now;
+    state.undoLastBytes = payload.bytesDone;
+  } else if (now - state.undoLastTime > 400) {
+    const deltaBytes = Math.max(0, payload.bytesDone - state.undoLastBytes);
+    const deltaSeconds = (now - state.undoLastTime) / 1000;
+    if (deltaSeconds > 0) state.undoSpeed = deltaBytes / deltaSeconds;
+    state.undoLastTime = now;
+    state.undoLastBytes = payload.bytesDone;
+  }
+
+  if (payload.stage === "copying" && state.undoSpeed > 0) {
+    $("#undoSpeed").textContent = `${fmtBytes(state.undoSpeed)}/s`;
+    const remaining = Math.max(0, payload.bytesTotal - payload.bytesDone);
+    $("#undoEta").textContent = remaining > 0
+      ? `约 ${etaText(remaining / state.undoSpeed)}`
+      : "即将完成";
+  } else {
+    $("#undoSpeed").textContent = "—";
+    $("#undoEta").textContent = "—";
+  }
+
+  if (payload.currentFile) {
+    $("#undoFile").textContent = `正在复制回 ${payload.currentFile}`;
+  } else if (payload.message) {
+    $("#undoFile").textContent = payload.message;
+  }
+}
+
 async function runPreflight() {
   if (state.busy || !state.src || !state.dst) return;
   const button = $("#toPreflight");
@@ -791,25 +862,43 @@ async function undoRecord(record, after) {
   );
   if (!confirmed) return;
 
+  const inline = after !== "history";
   state.busy = true;
   state.undoing = true;
-  $("#historyHint").textContent = "正在准备撤销…";
+  state.undoView = inline ? "done" : "history";
+  if (inline) {
+    showStep(3);
+    setUndoBusy(true);
+    requestAnimationFrame(() => {
+      $("#undoPanel").scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  } else {
+    $("#historyHint").textContent = "正在准备撤销…";
+  }
 
+  let undone = false;
   try {
     await invoke("undo_migration", { id: record.id });
+    undone = true;
     toast("撤销完成，文件已恢复原路径", 3400);
-    await refreshRecords();
-    renderRecords();
-    if (after === "done") {
-      clearSelection();
-      showStep(0);
-    }
   } catch (err) {
-    toast(`撤销失败：${String(err)}`, 4200);
+    const message = String(err);
+    toast(/取消/.test(message)
+      ? "已取消撤销，链接与原目录保持原状"
+      : `撤销失败：${message}`, 4600);
   } finally {
     state.busy = false;
     state.undoing = false;
+    state.undoView = "";
+    if (inline) setUndoBusy(false);
     $("#historyHint").textContent = "";
+  }
+
+  await refreshRecords();
+  renderRecords();
+  if (undone && inline) {
+    clearSelection();
+    showStep(0);
   }
 }
 
@@ -836,8 +925,11 @@ async function bindTauriEvents() {
   await listen("moveonlink://progress", (event) => {
     const payload = event.payload;
     if (state.undoing) {
-      $("#historyHint").textContent =
-        `${payload.phaseLabel || "正在撤销"} · ${Math.floor(payload.percent || 0)}%`;
+      if (state.undoView === "done") updateUndoProgress(payload);
+      if (state.historyOpen) {
+        $("#historyHint").textContent =
+          `${payload.phaseLabel || "正在撤销"} · ${Math.floor(payload.percent || 0)}%`;
+      }
       return;
     }
     if (state.historyOpen) {
@@ -858,9 +950,10 @@ function bindUI() {
   });
   $("#btnClose").addEventListener("click", async () => {
     if (state.busy) {
+      const doing = state.undoing ? "撤销" : "迁移";
       const confirmed = await ask(
-        "迁移正在进行。此时强制关闭可能中断本次操作（源目录有备份保护，但建议先取消迁移）。确定关闭吗？",
-        { title: "迁移进行中", kind: "warning" }
+        `${doing}正在进行。此时强制关闭可能中断本次操作（源目录有备份保护，但建议先取消${doing}）。确定关闭吗？`,
+        { title: `${doing}进行中`, kind: "warning" }
       );
       if (!confirmed) return;
     }
@@ -951,6 +1044,22 @@ function bindUI() {
   $("#undoBtn").addEventListener("click", () => {
     if (!state.record) return;
     undoRecord(state.record, "done");
+  });
+
+  $("#undoCancel").addEventListener("click", async () => {
+    if (!state.undoing) return;
+    const button = $("#undoCancel");
+    button.disabled = true;
+    button.textContent = "正在取消…";
+    $("#undoHint").textContent = "收到取消请求，正在清理撤销暂存副本…";
+    try {
+      await invoke("cancel_task");
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "取消撤销";
+      $("#undoHint").textContent = "取消失败，撤销仍在进行";
+      toast(String(err));
+    }
   });
 
   $("#restart").addEventListener("click", () => {

@@ -269,6 +269,31 @@
         <div class="warning-box" id="doneWarning" hidden></div>
         <div class="done-meta mono" id="doneMeta">—</div>
 
+        <div class="undo-panel" id="undoPanel" hidden>
+          <div class="undo-head">
+            <div class="undo-title">
+              <span class="kicker">Undo / Restoring</span>
+              <b>正在撤销迁移</b>
+            </div>
+            <div class="undo-side">
+              <span class="phase-chip mono" id="undoPhase">准备撤销</span>
+              <div class="undo-pct"><span id="undoPct">0</span><small>%</small></div>
+            </div>
+          </div>
+          <div class="bar undo-bar"><i id="undoBarFill"></i></div>
+          <div class="undo-line mono" id="undoFile">正在准备撤销…</div>
+          <div class="live">
+            <div><span>已恢复</span><b id="undoSize">0 B / —</b></div>
+            <div><span>速度</span><b id="undoSpeed">—</b></div>
+            <div><span>剩余</span><b id="undoEta">—</b></div>
+            <div><span>文件</span><b id="undoFiles">0 / —</b></div>
+          </div>
+          <div class="undo-foot">
+            <span class="hint" id="undoHint">取消是安全的：链接保持不动，暂存副本会被清理</span>
+            <button class="btn danger small" id="undoCancel">取消撤销</button>
+          </div>
+        </div>
+
         <div class="actions">
           <button class="btn primary" id="openTarget">打开目标目录</button>
           <div class="action-right">
