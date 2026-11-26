@@ -256,8 +256,8 @@
       <section class="panel" data-panel="3">
         <div class="done-hero">
           <span class="kicker">Step 04 / Done</span>
-          <h2>已释放 <span id="doneSize">—</span></h2>
-          <p class="lead">原目录已替换为链接，旧路径照常访问。实体文件现在存放在目标盘。</p>
+          <h2 id="doneTitle">已释放 <span id="doneSize">—</span></h2>
+          <p class="lead" id="doneLead">原目录已替换为链接，旧路径照常访问。实体文件现在存放在目标盘。</p>
         </div>
 
         <div class="map verified">
@@ -272,7 +272,7 @@
           </div>
         </div>
 
-        <ul class="checks">
+        <ul class="checks" id="doneChecks">
           <li class="ok"><span class="ck">✓</span>副本文件数量、大小与 SHA-256 已逐文件核对</li>
           <li class="ok"><span class="ck">✓</span>链接解析与目标内容读取校验通过</li>
           <li class="ok"><span class="ck">✓</span>原目录备份已清理（或已保留提示）</li>

@@ -813,12 +813,25 @@ async function beginMigration() {
 }
 
 function renderDone(record) {
-  $("#doneSize").textContent = fmtBytes(record.sizeBytes);
+  const revoked = record.status === "revoked";
+  $("#doneTitle").innerHTML = revoked
+    ? "已撤销迁移"
+    : `已释放 <span id="doneSize">${fmtBytes(record.sizeBytes)}</span>`;
+  $("#doneLead").textContent = revoked
+    ? "该次迁移已撤销：链接已移除，实体文件已回迁到原路径。"
+    : "原目录已替换为链接，旧路径照常访问。实体文件现在存放在目标盘。";
   $("#doneSrc").textContent = record.source;
   $("#doneDst").textContent = record.target;
-  $("#doneLinkType").textContent = record.linkType === "symlink" ? "SYMLINK /D" : "JUNCTION /J";
-  $("#doneMeta").textContent =
-    `${record.createdAt} · ${fmtInt(record.fileCount)} 个文件 · ${linkLabel(record.linkType)}`;
+  $("#doneLinkType").textContent = revoked
+    ? "REVOKED"
+    : record.linkType === "symlink" ? "SYMLINK /D" : "JUNCTION /J";
+  $("#doneLinkType").classList.toggle("ok-tag", !revoked);
+  $("#doneMeta").textContent = revoked
+    ? `${record.createdAt} 迁移 · ${record.revokedAt ? `${record.revokedAt} 撤销` : "已撤销"}`
+    : `${record.createdAt} · ${fmtInt(record.fileCount)} 个文件 · ${linkLabel(record.linkType)}`;
+  $("#doneChecks").hidden = revoked;
+  $("#openTarget").hidden = revoked;
+  $("#undoBtn").hidden = revoked;
 
   const warning = $("#doneWarning");
   if (record.note) {
@@ -918,8 +931,9 @@ async function undoRecord(record, after) {
   }
 
   let undone = false;
+  let updated = null;
   try {
-    await invoke("undo_migration", { id: record.id });
+    updated = await invoke("undo_migration", { id: record.id });
     undone = true;
     toast("撤销完成，文件已恢复原路径", 3400);
   } catch (err) {
@@ -937,6 +951,10 @@ async function undoRecord(record, after) {
 
   await refreshRecords();
   renderRecords();
+  if (undone && !inline && updated && state.record && state.record.id === record.id) {
+    state.record = updated;
+    renderDone(updated);
+  }
   if (undone && inline) {
     clearSelection();
     showStep(0);

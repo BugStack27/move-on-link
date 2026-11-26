@@ -340,6 +340,7 @@ button.badge:hover{border-color:var(--ink-2);background:#fff}
   transition:background .16s, border-color .16s, color .16s, transform .16s, box-shadow .16s;
 }
 .btn:active{transform:translateY(1px)}
+.btn[hidden]{display:none}
 .btn.primary{
   background:var(--accent);color:#fff8f2;
   box-shadow:0 12px 22px -14px rgba(217,79,32,.9);
