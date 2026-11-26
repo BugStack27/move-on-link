@@ -103,6 +103,47 @@ function toast(message, ms = 2800) {
   toast._timer = setTimeout(() => el.classList.remove("show"), ms);
 }
 
+function parentDir(path) {
+  const m = String(path).match(/^(.*)[\\/][^\\/]+$/);
+  return m ? m[1] : path;
+}
+
+function renderRecoveryNotice(notice) {
+  const card = $("#recoveryCard");
+  if (!notice) {
+    card.hidden = true;
+    return;
+  }
+  card.classList.toggle("warning", notice.kind === "warning");
+  $("#recoveryTitle").textContent = notice.title;
+  $("#recoveryMessage").textContent = notice.message;
+  $("#recoveryPaths").innerHTML = (notice.paths || []).map((item) => `
+    <li class="recovery-path">
+      <span class="recovery-label">${esc(item.label)}</span>
+      <span class="recovery-value mono">${esc(item.path)}</span>
+      <button class="btn line small" data-path="${esc(item.path)}" data-dir="${item.isDir ? "1" : "0"}">${item.isDir ? "打开" : "打开目录"}</button>
+    </li>
+  `).join("");
+  card.hidden = false;
+}
+
+async function loadRecoveryNotice() {
+  try {
+    renderRecoveryNotice(await invoke("recovery_notice"));
+  } catch {
+    // 浏览器预览或旧版本后端时忽略
+  }
+}
+
+async function dismissRecoveryNotice() {
+  $("#recoveryCard").hidden = true;
+  try {
+    await invoke("dismiss_recovery_notice");
+  } catch {
+    // 浏览器预览时忽略
+  }
+}
+
 function showStep(step) {
   state.step = step;
   state.historyOpen = false;
@@ -963,6 +1004,16 @@ function bindUI() {
   $("#pickSrc").addEventListener("click", pickSource);
   $("#pickDst").addEventListener("click", pickTarget);
 
+  $("#recoveryClose").addEventListener("click", dismissRecoveryNotice);
+  $("#recoveryPaths").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-path]");
+    if (!button) return;
+    const target = button.dataset.dir === "1"
+      ? button.dataset.path
+      : parentDir(button.dataset.path);
+    openPath(target).catch((err) => toast(`打开目录失败：${String(err)}`));
+  });
+
   $("#targetNameClose").addEventListener("click", closeNameDialog);
   $("#targetNameCancel").addEventListener("click", closeNameDialog);
   $("#targetNameConfirm").addEventListener("click", confirmTargetName);
@@ -1079,12 +1130,7 @@ function bindUI() {
     console.warn("Tauri bridge unavailable:", err);
   }
   await refreshRecords();
-  try {
-    const notice = await invoke("take_recovery_notice");
-    if (notice) toast(notice, 8000);
-  } catch {
-    // 浏览器预览或旧版本后端时忽略
-  }
+  await loadRecoveryNotice();
   updateSelectionUI();
   showStep(0);
 })();

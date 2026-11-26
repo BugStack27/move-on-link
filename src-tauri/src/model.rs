@@ -54,6 +54,24 @@ pub struct MigrationRecord {
     pub backup_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryPath {
+    pub label: String,
+    pub path: String,
+    pub is_dir: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryNotice {
+    pub kind: String,
+    pub title: String,
+    pub message: String,
+    #[serde(default)]
+    pub paths: Vec<RecoveryPath>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressEvent {
@@ -71,3 +89,6 @@ pub struct ProgressEvent {
 pub const STATUS_COMPLETED: &str = "completed";
 pub const STATUS_WARNING: &str = "completed_with_warning";
 pub const STATUS_REVOKED: &str = "revoked";
+
+pub const NOTICE_INFO: &str = "info";
+pub const NOTICE_WARNING: &str = "warning";

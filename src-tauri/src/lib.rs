@@ -10,11 +10,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+const RECOVERY_NOTICE_FILE: &str = "recovery-notice.json";
+
 #[derive(Default)]
 struct AppState {
     cancel: Arc<AtomicBool>,
     busy: Arc<AtomicBool>,
-    recovery: Arc<std::sync::Mutex<Option<String>>>,
+    recovery: Arc<std::sync::Mutex<Option<model::RecoveryNotice>>>,
 }
 
 struct BusyGuard(Arc<AtomicBool>);
@@ -312,12 +314,29 @@ async fn undo_migration(
 }
 
 #[tauri::command]
-fn take_recovery_notice(state: State<'_, AppState>) -> Option<String> {
-    state
-        .recovery
-        .lock()
-        .ok()
-        .and_then(|mut slot| slot.take())
+fn recovery_notice(state: State<'_, AppState>) -> Option<model::RecoveryNotice> {
+    state.recovery.lock().ok().and_then(|slot| slot.clone())
+}
+
+#[tauri::command]
+fn dismiss_recovery_notice(app: AppHandle, state: State<'_, AppState>) {
+    if let Ok(mut slot) = state.recovery.lock() {
+        *slot = None;
+    }
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = std::fs::remove_file(dir.join(RECOVERY_NOTICE_FILE));
+    }
+}
+
+fn save_recovery_notice(dir: &Path, notice: &model::RecoveryNotice) {
+    if let Ok(content) = serde_json::to_string_pretty(notice) {
+        let _ = std::fs::write(dir.join(RECOVERY_NOTICE_FILE), content);
+    }
+}
+
+fn load_saved_recovery_notice(dir: &Path) -> Option<model::RecoveryNotice> {
+    let raw = std::fs::read_to_string(dir.join(RECOVERY_NOTICE_FILE)).ok()?;
+    serde_json::from_str(&raw).ok()
 }
 
 pub fn run() {
@@ -328,11 +347,26 @@ pub fn run() {
         .setup(|app| {
             if let Ok(dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(&dir);
-                let notice = match engine::recover_interrupted(
-                    &dir.join("migration-journal.json"),
-                ) {
+                let journal_path = dir.join("migration-journal.json");
+                let fresh = match engine::recover_interrupted(&journal_path) {
                     Ok(notice) => notice,
-                    Err(err) => Some(format!("上次迁移的恢复检查失败：{err}")),
+                    Err(err) => Some(model::RecoveryNotice {
+                        kind: model::NOTICE_WARNING.to_string(),
+                        title: "上次迁移的恢复检查失败".to_string(),
+                        message: err,
+                        paths: vec![model::RecoveryPath {
+                            label: "恢复日志".to_string(),
+                            path: pathutil::display_path(&journal_path),
+                            is_dir: false,
+                        }],
+                    }),
+                };
+                let notice = match fresh {
+                    Some(notice) => {
+                        save_recovery_notice(&dir, &notice);
+                        Some(notice)
+                    }
+                    None => load_saved_recovery_notice(&dir),
                 };
                 if let Some(notice) = notice {
                     if let Ok(mut slot) = app.state::<AppState>().recovery.lock() {
@@ -352,7 +386,8 @@ pub fn run() {
             cancel_task,
             list_records,
             undo_migration,
-            take_recovery_notice
+            recovery_notice,
+            dismiss_recovery_notice
         ])
         .run(tauri::generate_context!())
         .expect("error while running MoveOnLink");

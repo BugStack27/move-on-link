@@ -101,6 +101,18 @@
           <p class="lead">自由选择源目录与目标位置。迁移完成后，原路径会替换为 Junction 链接，程序和脚本仍按旧路径访问。</p>
         </div>
 
+        <div class="recovery-card" id="recoveryCard" hidden>
+          <div class="recovery-head">
+            <div class="recovery-heading">
+              <span class="kicker">Recovery / 上次中断</span>
+              <b class="recovery-title" id="recoveryTitle"></b>
+            </div>
+            <button class="recovery-close" id="recoveryClose" aria-label="关闭恢复提示">✕</button>
+          </div>
+          <p class="recovery-message" id="recoveryMessage"></p>
+          <ul class="recovery-paths" id="recoveryPaths"></ul>
+        </div>
+
         <div class="route">
           <div class="route-row" id="srcRow">
             <span class="route-tag">SRC</span>

@@ -1,4 +1,6 @@
-use crate::model::ProgressEvent;
+use crate::model::{
+    ProgressEvent, RecoveryNotice, RecoveryPath, NOTICE_INFO, NOTICE_WARNING,
+};
 use crate::pathutil::{self, display_path, extended, friendly_io_error, is_reparse};
 use fs2::available_space;
 use sha2::{Digest, Sha256};
@@ -75,7 +77,15 @@ fn clear_journal(options: &MigrationOptions) {
     }
 }
 
-pub fn recover_interrupted(journal_path: &Path) -> Result<Option<String>, String> {
+fn recovery_path(label: &str, path: &Path, is_dir: bool) -> RecoveryPath {
+    RecoveryPath {
+        label: label.to_string(),
+        path: display_path(path),
+        is_dir,
+    }
+}
+
+pub fn recover_interrupted(journal_path: &Path) -> Result<Option<RecoveryNotice>, String> {
     if !journal_path.exists() {
         return Ok(None);
     }
@@ -91,11 +101,22 @@ pub fn recover_interrupted(journal_path: &Path) -> Result<Option<String>, String
     if let Some(meta) = &source_meta {
         if is_reparse(meta) {
             let _ = fs::remove_file(extended(journal_path));
-            return Ok(Some("上次迁移已完成，已清理恢复日志".to_string()));
+            return Ok(Some(RecoveryNotice {
+                kind: NOTICE_INFO.to_string(),
+                title: "上次迁移已完成".to_string(),
+                message: "原路径已由链接接管，恢复日志已自动清理，无需处理。".to_string(),
+                paths: Vec::new(),
+            }));
         }
         if fs::symlink_metadata(extended(&backup)).is_err() {
             let _ = fs::remove_file(extended(journal_path));
-            return Ok(Some("上次迁移在替换原路径前中止，已清理恢复日志".to_string()));
+            return Ok(Some(RecoveryNotice {
+                kind: NOTICE_INFO.to_string(),
+                title: "上次迁移在替换原路径前中止".to_string(),
+                message: "原目录未受影响，恢复日志已清理。目标位置可能残留未接管的副本，确认无误后可手动删除。"
+                    .to_string(),
+                paths: vec![recovery_path("目标副本", &target, true)],
+            }));
         }
     }
 
@@ -110,21 +131,33 @@ pub fn recover_interrupted(journal_path: &Path) -> Result<Option<String>, String
                     )
                 })?;
                 let _ = fs::remove_file(extended(journal_path));
-                return Ok(Some(format!(
-                    "检测到上次迁移中断，已将备份恢复到 {}；目标副本保留在 {}",
-                    display_path(&source),
-                    display_path(&target)
-                )));
+                return Ok(Some(RecoveryNotice {
+                    kind: NOTICE_WARNING.to_string(),
+                    title: "已将中断迁移的备份恢复到原路径".to_string(),
+                    message: "上次迁移中断，原目录已从备份恢复，文件可正常访问。目标副本仍保留，确认数据无误后可手动清理或重新迁移。"
+                        .to_string(),
+                    paths: vec![
+                        recovery_path("已恢复的原目录", &source, true),
+                        recovery_path("目标副本", &target, true),
+                    ],
+                }));
             }
         }
     }
 
     let unresolved = journal_path.with_extension("unresolved.json");
     let _ = fs::rename(extended(journal_path), extended(&unresolved));
-    Ok(Some(format!(
-        "检测到未完成的迁移状态，已保留现场，请手动检查：{}",
-        display_path(&unresolved)
-    )))
+    Ok(Some(RecoveryNotice {
+        kind: NOTICE_WARNING.to_string(),
+        title: "检测到未完成的迁移状态".to_string(),
+        message: "现场已保留，请按下列路径手动检查；确认处理完成后可删除待检查日志。".to_string(),
+        paths: vec![
+            recovery_path("待检查日志", &unresolved, false),
+            recovery_path("原目录", &source, true),
+            recovery_path("备份目录", &backup, true),
+            recovery_path("目标副本", &target, true),
+        ],
+    }))
 }
 
 #[derive(Debug)]
@@ -1218,7 +1251,12 @@ mod tests {
         fs::write(&journal_path, journal.to_string()).expect("journal");
 
         let notice = recover_interrupted(&journal_path).expect("recover");
-        assert!(notice.is_some());
+        let notice = notice.expect("notice");
+        assert_eq!(notice.kind, NOTICE_WARNING);
+        assert!(notice
+            .paths
+            .iter()
+            .any(|item| item.is_dir && item.path == display_path(&target)));
         assert!(source.join("a.txt").is_file());
         assert!(!journal_path.exists());
 
